@@ -63,7 +63,7 @@ const formatValueList=valueList=>{
             if(dataType=="object"){
                 dataType="table"//JSON.stringify(v);
                 v=toTable(v);
-                console.info("v",v);
+                // console.info("v",v);
             }
             
             valueItem={
@@ -135,8 +135,8 @@ const actions={
             return {code:101,message:"Parameter is missing"};
         }
         let {name,data,authority,onlyGetFee}=params;
-        if(!(/^[a-z]([a-z0-9\.-]){4,63}/.test(name))){
-          return {code:130,message:"Please enter the correct contract name(/^[a-z]([a-z0-9\.-]){4,63}/)"};
+        if(!(/^contract\.([a-z0-9\.-]){5,54}/.test(name))){
+          return {code:130,message:"Please enter the correct contract name(/^contract.[a-z]([a-z0-9\.-]){15,63}/)"};
         }
         return dispatch('transactions/_transactionOperations', {
             operations:[{
@@ -241,10 +241,17 @@ const actions={
         return res;
     },
     callContractFunction:async ({dispatch},params)=>{
-        if(!helper.trimParams(params)){
+        if(!helper.trimParams(params,{contractKey})){
             return {code:101,message:"Parameter is missing"};
         }
-        let {nameOrId,functionName,valueList,onlyGetFee}=params;
+        let {nameOrId,functionName,valueList,contractKey,onlyGetFee}=params;
+        if(contractKey){
+            dispatch("setting/setSettingsAPIS",{app_keys:[contractKey]},{root:true});
+        }
+        if(!(Array.isArray(valueList))){
+            return {code:135,message:"Please check parameter data type"};
+        }
+
         if(!(/1\.\d+\.\d+\./.test(nameOrId))){
           let contract_res=await dispatch("getContract",{nameOrId:nameOrId});
           if(contract_res.code==1){

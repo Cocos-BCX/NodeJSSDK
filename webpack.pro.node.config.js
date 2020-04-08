@@ -8,7 +8,10 @@ module.exports = {
     output: {
         path: path.resolve(root_dir, 'build-node'),
         filename: 'bcx.node.js',
-        publicPath: './'
+        publicPath: './',
+        libraryTarget: "umd",
+        globalObject: "this",
+        library: "webpackNumbers"
     },
     module: {
         rules: [

@@ -32,10 +32,6 @@ const actions={
                       });
             parse_ops=await API.Operations.parseOperations({ operations: parse_ops,store });
             transaction.parse_ops=parse_ops.operations;
-            transaction.parse_ops= transaction.parse_ops.map(item=>{
-                item.date=new Date(item.date+"Z").format("yyyy/MM/dd HH:mm:ss");
-                return item;
-            });
             transaction.trx_id=transactionId;
             transaction.expiration=new Date(transaction.expiration+"Z").format("yyyy/MM/dd HH:mm:ss");
             delete transaction.operations;
@@ -50,7 +46,10 @@ const actions={
         }
       },
       queryBlock:async (store,params)=>{
-        let {block="",isReqTrx=true,maxOpCount=1000000,block_res=null}=params;
+        let {block="",isReqTrx=true,isParseTrx=true,maxOpCount=1000000,block_res=null}=params;
+        if(isParseTrx==undefined){
+          isParseTrx=true;
+        }
         if(block&&typeof block=="string")
            block=block.trim();
         
@@ -73,7 +72,8 @@ const actions={
               block_id:head_block_id,
               witness:current_witness,
               timestamp:time,
-              trx_count:current_transaction_count
+              trx_count:current_transaction_count,
+              op_count:current_transaction_count
             }
           }
 
@@ -93,7 +93,7 @@ const actions={
               transaction=transactions[i][1];
               trx_ops_count=transaction.operations.length;
               blockInfo.op_count+=trx_ops_count;
-              if(!block_res&&blockInfo.op_count<maxOpCount){
+              if(!block_res&&blockInfo.op_count<maxOpCount&&isParseTrx){
                 parse_ops=transaction.operations.map((op,op_index)=>{
                     return {
                       op,

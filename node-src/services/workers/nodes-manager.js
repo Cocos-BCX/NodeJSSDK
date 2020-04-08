@@ -1,10 +1,3 @@
-import PersistentStorage from '../persistent-storage';
-let WebSocketClient = void 0;
-if (typeof WebSocket === "undefined" && !process.env.browser) {
-    WebSocketClient = require("ws");
-} else {
-    WebSocketClient = WebSocket;
-}
 class NodesManager {
   constructor({ nodes, defaultNode }) {
     this._nodes = nodes;
@@ -16,7 +9,7 @@ class NodesManager {
   }
   deleteAPINode(url){
     delete this._nodes[url];
-    PersistentStorage.saveNodesData({ data: this._nodes });
+    // PersistentStorage.saveNodesData({ data: this._nodes });
   }
   setAPINode(nodes){
     this._nodes=nodes;
@@ -24,7 +17,7 @@ class NodesManager {
   }
 
   _retrieveCachedNodesData() {
-    const cachedData = PersistentStorage.getSavedNodesData();
+    const cachedData = {};//PersistentStorage.getSavedNodesData();
     if(!this._nodes) return;
 
     Object.keys(this._nodes).forEach(url => {
@@ -55,7 +48,7 @@ class NodesManager {
            resolve(0);
         }, 2000);
 
-        let socket = new WebSocketClient(url);
+        let socket = new WebSocket(url);
         socket.onopen = () => {
           clearTimeout(ping_timer);
           socket.close();
@@ -81,7 +74,7 @@ class NodesManager {
           this._nodes[url].ping = await NodesManager._pingNode(url);
         }
       })).then(() => {
-        PersistentStorage.saveNodesData({ data: this._nodes });
+        // PersistentStorage.saveNodesData({ data: this._nodes });
         this.firstTestPing=false;
         resolve(this._nodes);
       });

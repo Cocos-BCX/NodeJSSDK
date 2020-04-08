@@ -1,5 +1,4 @@
-import { ChainTypes } from 'bcxjs-cores';
-import {ChainStore} from "bcxjs-cores";
+import { ChainTypes,ChainStore } from 'bcxjs-cores';
 
 import { Apis } from 'bcxjs-ws';
 import API from '../api';
@@ -62,22 +61,22 @@ const Operations = {
     return amountAssetId === feeAssetId;
   },
 
-  // User for transfer operations. Determines if user received or sent
-  _getOperationOtherUserName: async (userId, payload) => {
-    const otherUserId = payload.to === userId ? payload.from : payload.to;
-    const userRequest = await API.Account.getAccount(otherUserId,true);
-    return userRequest.success ? userRequest.data.account.name : '';
-  },
-
   // Parses operation for improved format
-  _parseOperation: async (operation, userId, ApiObject, ApiObjectDyn) => {
+  _parseOperation: async (operation, ApiObject, ApiObjectDyn,isReqDate=true) => {
     const [type, payload] = operation.op;
     const operationType = Operations._operationTypes[type];
-    let date = Operations._getOperationDate(operation, ApiObject, ApiObjectDyn);
-    let block_res=await API.Operations.get_block_header(operation.block_num);
-    if(block_res.code==1){
-      date=new Date(block_res.data.timestamp+"Z").format("yyyy/MM/dd HH:mm:ss");
+    let date = "";
+    if(operation.date){
+      date=operation.date;
+    }else if(isReqDate){
+        if(ApiObjectDyn.code==1)
+        date = Operations._getOperationDate(operation, ApiObject, ApiObjectDyn);
+        let block_res=await API.Operations.get_block_header(operation.block_num);
+        if(block_res.code==1){
+          date=new Date(block_res.data.timestamp+"Z").format("yyyy/MM/dd HH:mm:ss");
+        }
     }
+    
     let isBid = false;
     let otherUserName = null;
     let res={
@@ -90,22 +89,18 @@ const Operations = {
     if(op_id){
       res.id=op_id;
     }
-    if (operationType === 'fill_order' || operationType === 'limit_order_create') {
-      isBid = await Operations._checkIfBidOperation(operation);
-      res.buyer=isBid;
-    }
+    // if (operationType === 'fill_order' || operationType === 'limit_order_create') {
+    //   isBid = await Operations._checkIfBidOperation(operation);
+    //   res.buyer=isBid;
+    // }
 
-    if (operationType === 'transfer'&&userId) {
-      otherUserName = await Operations._getOperationOtherUserName(userId, payload);
-      res.other_user_name=otherUserName;
-    }
     if(operation.result){
       res.result=operation.result[1];
       res.result.type=_store.rootGetters["setting/trx_results"][operation.result[0]];
-      if(operationType=="creat_nh_asset"){
+      if(operationType=="create_nh_asset"){
         res.payload.item_id=operation.result[1].result;
       }
-      if(operationType=="creat_world_view"){
+      if(operationType=="create_world_view"){
         res.payload.version_id=operation.result[1];
       }
       if(operationType=="call_contract_function"){
@@ -122,11 +117,10 @@ const Operations = {
         });
         res.result.contract_affecteds=await Operations.parseOperations({
           operations:_operations,
-          userId:_store.rootGetters["account/getAccountUserId"],
           store:_store,
-          isContract:true
+          isContract:true,
+          isReqDate:false
         });
-        
         let additional_cost=res.result.additional_cost
         if(additional_cost){
           let {amount,asset_id}=additional_cost;
@@ -139,21 +133,21 @@ const Operations = {
 
   // Parses array of operations, return array of parsed operations and array of assets ids
   // that were user in it. United Labs of BCTech.
-  parseOperations: async ({ operations, userId=null,store,isContract=false }) => {
+  parseOperations: async ({ operations, store,isContract=false,isReqDate=true }) => {
+    // console.info("operations",operations);
     _store=store;
     const ApiInstance = Apis.instance();
-    const ApiObject =[(await API.Explorer.getGlobalObject()).data];
-    const ApiObjectDyn =[(await API.Explorer.getDynGlobalObject(false)).data];
-    // console.info('operations',JSON.parse(JSON.stringify(operations)));
-    const operationTypes = [0, 1, 2,3,4,5,6,7,8,9,10,11,13,14,15,18,21,22,32,39,43,44,46,47,48,49,50,51,52,53,54,55,60,61,62,300,301,303,3010,3011,3012];//,53,54.55,56,57,58
+    const ApiObject =isReqDate?[(await API.Explorer.getGlobalObject(true)).data]:null;
+    const ApiObjectDyn =isReqDate?[(await API.Explorer.getDynGlobalObject(false)).data]:null;
+    const operationTypes = [0, 1, 2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,23,24,26,27,30,31,34,35,37,38,39,40,41,42,43,44,45,50,54,300,301,303,3010,3011,3012];//,53,54.55,56,57,58
     const filteredOperations = operations.filter(op => {
       return operationTypes.includes(op.op[0])
     });
     let parsedOperations=[];
     for(let j=0;j<filteredOperations.length;j++){
-      parsedOperations.push(await Operations._parseOperation(filteredOperations[j], userId, ApiObject, ApiObjectDyn));
+      parsedOperations.push(await Operations._parseOperation(filteredOperations[j], ApiObject, ApiObjectDyn,isReqDate));
     }
-    const assetsIds = Operations._getOperationsAssetsIds(parsedOperations);
+    // const assetsIds = Operations._getOperationsAssetsIds(parsedOperations);
 
     let item;
     for(let i=0;i<parsedOperations.length;i++){
@@ -166,12 +160,25 @@ const Operations = {
       let parseOpObj=await Operations.getParseOperations(item);
       item.parseOperationsText=parseOpObj.opText.join("");
       item.parseOperations=parseOpObj.opObj;
-      let feeObj=item.payload.fee;
-      if(feeObj){
-        let feeAsset=await API.Assets.fetch([feeObj.asset_id],true);
-        if(feeAsset)
-        item.parseOperations.fee=helper.getFullNum(feeObj.amount/Math.pow(10,feeAsset.precision))+" "+feeAsset.symbol;
+      item.parseOperations.fees=[];
+      if(item.result){
+        let fees=item.result.fees;
+        if(fees){
+          for(let i=0;i<fees.length;i++){
+            let feeObj=fees[i];
+            let feeAsset=await API.Assets.fetch([feeObj.asset_id],true);
+            if(feeAsset)
+              item.parseOperations.fees.push(helper.getFullNum(feeObj.amount/Math.pow(10,feeAsset.precision))+" "+feeAsset.symbol)
+          }
+        }
       }
+      
+      // let feeObj=item.payload.fee;
+      // if(feeObj){
+      //   let feeAsset=await API.Assets.fetch([feeObj.asset_id],true);
+      //   if(feeAsset)
+      //   item.parseOperations.fee=helper.getFullNum(feeObj.amount/Math.pow(10,feeAsset.precision))+" "+feeAsset.symbol;
+      // }
 
       let trxType="trxTypes_"+item.type;
       if(trxType in  zh_CN){
@@ -193,14 +200,11 @@ const Operations = {
         delete item.typeName;
         return item;
      });
-
-      // return {
-      //   contract_affecteds: parsedOperations
-      // };
     }
     return {
       operations: parsedOperations.map(item=>{
           item.parse_operations=item.parseOperations;
+          // item.parse_operations.fees=JSON.parse(item.parse_operations.fees);
           item.parse_operations_text=item.parseOperationsText;
           item.raw_data=item.payload;
           item.type_name=item.typeName;
@@ -210,8 +214,9 @@ const Operations = {
           delete item.payload;
           delete item.typeName;
           return item;
-      }),
-      assetsIds
+      })
+      // ,
+      // assetsIds
     };
   },
 
@@ -254,40 +259,86 @@ const Operations = {
                 [{type: "account", value: op.payload.account_to_upgrade, arg: "account"}]
             );
             break;
+      case "witness_create":
+            return await Operations.getTranslateInfo(
+                "operation_witness_create",
+                [{type: "account", value: op.payload.witness_account, arg: "account"}]
+            );
+            break;
+      case "committee_member_create":
+            return await Operations.getTranslateInfo(
+                "operation_committee_member_create",
+                [{type: "account", value: op.payload.committee_member_account, arg: "account"}]
+            );
+            break;
+      case "witness_update":
+            return await Operations.getTranslateInfo(
+                "operation_witness_update",
+                [{type: "account", value: op.payload.witness_account, arg: "account"}]
+            );
+            break;
+      case "committee_member_update":
+            return await Operations.getTranslateInfo(
+                "operation_committee_member_update",
+                [{type: "account", value: op.payload.committee_member_account, arg: "account"}]
+            );
+            break;
       case "fill_order":
          o=op.payload;
-        let receivedAmount = o.fee.asset_id === o.receives.asset_id ? o.receives.amount - o.fee.amount : o.receives.amount;
-        return await Operations.getTranslateInfo(
+        // let receivedAmount = o.fee.asset_id === o.receives.asset_id ? o.receives.amount - o.fee.amount : o.receives.amount;
+          let base2=o.receives.asset_id;
+          let quote2=o.pays.asset_id;
+          const {
+            first2,
+            second2
+          } = market_utils.getMarketName(base2, quote2);
+          const isBid2 =o.pays.asset_id === second2;
+
+          let priceBase = isBid2 ? o.receives : o.pays;
+          let priceQuote = isBid2 ? o.pays : o.receives;
+          let amount = isBid2 ? o.pays :  o.receives;
+          let receivedAmount =amount.amount;
+          // o.fee.asset_id === amount.asset_id
+          //     ? amount.amount - o.fee.amount
+          //     : amount.amount;
+          return await Operations.getTranslateInfo(
           "operation_fill_order",
           [
               {type: "account", value: o.account_id, arg: "account"},
               {
                   type: "amount",
-                  value: {amount: receivedAmount, asset_id: o.receives.asset_id},
+                  value: {amount: receivedAmount, asset_id: amount.asset_id},
                   arg: "received",
                   decimalOffset: o.receives.asset_id === "1.3.0" ? 3 : null
               },
-              {type: "price", value: {base: o.pays, quote: o.receives}, arg: "price"}
+              {type: "price", value: {base: priceBase, quote: priceQuote}, arg: "price"}
           ]
         );
         break;
       case "limit_order_create":
          o=op.payload;
-        let isAsk = market_utils.isAskOp(o);
+        // let isAsk = market_utils.isAskOp(o);
+         let base=o.min_to_receive.asset_id;
+         let quote=o.amount_to_sell.asset_id;
+        const {
+          first,
+          second
+        } = market_utils.getMarketName(base, quote);
+        const isBid =o.amount_to_sell.asset_id === second;
         return await Operations.getTranslateInfo(
-          isAsk ? "operation_limit_order_sell" : "operation_limit_order_buy",
+          isBid ? "operation_limit_order_buy" : "operation_limit_order_sell",
           [
               {type: "account", value: o.seller, arg: "account"},
               {
                   type: "amount",
-                  value: isAsk ? o.amount_to_sell :o.min_to_receive,
+                  value: isBid ?o.min_to_receive:o.amount_to_sell,
                   arg: "amount"
               },
               {
                   type: "price",
                   value: {
-                      base: isAsk ? o.min_to_receive : o.amount_to_sell,
-                      quote: isAsk ? o.amount_to_sell : o.min_to_receive
+                      base: isBid ? o.amount_to_sell:o.min_to_receive,
+                      quote: isBid ?  o.min_to_receive :o.amount_to_sell
                   },
                   arg: "price"
               }
@@ -295,33 +346,43 @@ const Operations = {
         );
         break;
      case "limit_order_cancel":
-     return await Operations.getTranslateInfo(
-          "operation_limit_order_cancel",
-          [
-            {type: "account", value:op.payload.fee_paying_account, arg: "account"},
-            {type:'order',value:op.payload.order.substring(4),arg:'order'}
-          ]
-       );
+        return await Operations.getTranslateInfo(
+              "operation_limit_order_cancel",
+              [
+                {type: "account", value:op.payload.fee_paying_account, arg: "account"},
+                {type:'order',value:op.payload.order.substring(4),arg:'order'}
+              ]
+          );
         break;
+      case "call_order_update":
+        return await Operations.getTranslateInfo(
+             "operation_call_order_update",
+             [
+               {type: "account", value:op.payload.funding_account, arg: "account"},
+               {type: "asset", value: op.payload.delta_debt.asset_id, arg: "debtSymbol"},
+               {type: "amount", value: op.payload.delta_debt, arg: "debt"},
+               {type: "amount", value: op.payload.delta_collateral, arg: "collateral"}            ]
+         );
+         break;
       case "vesting_balance_withdraw":
         return await Operations.getTranslateInfo(
               "operation_vesting_balance_withdraw",
               [
                 {type: "account", value: op.payload.owner, arg: "account"},
                 {type: "amount", value: op.payload.amount, arg: "amount"},
+                {type: "vesting_balance", value: op.payload.vesting_balance, arg: "vesting_balance_id"},
               ]
           );
         break;
       case "call_contract_function":
 
         let contract=(await _store.dispatch("contract/getContract",{nameOrId:op.payload.contract_id,isCache:true},{root:true})).data;
-        let action=contract.abi_actions.find(item=>{
+        let action=contract?contract.abi_actions.find(item=>{
             return item.name==op.payload.function_name;
-        });
+        }):null;
 
         let value_list_jsons={};//use parameters as keyname and merge values into a Json string
         let v="";
-
         if(action){
           action.arglist.forEach((arg,index)=>{
             let v_l_item=op.payload.value_list[index];
@@ -379,16 +440,16 @@ const Operations = {
                 ]
             );
         break;
-        case "creat_world_view":
+        case "create_world_view":
           return await Operations.getTranslateInfo(
-                "operation_creat_world_view",
+                "operation_create_world_view",
                 [
                   {type: "account", value: op.payload.fee_paying_account, arg: "fee_paying_account"},
                   {type: "world_view", value: op.payload.world_view, arg: "world_view"}
                 ]
             );
         break;
-        case "creat_nh_asset":
+        case "create_nh_asset":
             let types=  [
               {type: "account", value: op.payload.fee_paying_account, arg: "fee_paying_account"},
               {type: "account", value: op.payload.owner, arg: "owner"}
@@ -397,7 +458,7 @@ const Operations = {
               types.push({type: "nh_asset", value: op.result.result, arg: "nh_asset"});
             }
            return await Operations.getTranslateInfo(
-                "operation_creat_nh_asset",
+                "operation_create_nh_asset",
                 types
             );
         break;
@@ -432,9 +493,9 @@ const Operations = {
             );
            break;
          
-        case "creat_nh_asset_order":
+        case "create_nh_asset_order":
           return await Operations.getTranslateInfo(
-                  "operation_creat_nh_asset_order",
+                  "operation_create_nh_asset_order",
                   [
                     {type: "account", value: op.payload.seller, arg: "seller"},
                     {type: "nh_asset", value: op.payload.nh_asset, arg: "nh_asset"},
@@ -442,6 +503,11 @@ const Operations = {
                         type: "amount",
                         value: op.payload.price,
                         arg: "amount"
+                    },
+                    {
+                        type: "amount",
+                        value: op.payload.pending_orders_fee,
+                        arg: "pending_orders_fee"
                     }
                   ]
               );
@@ -489,6 +555,7 @@ const Operations = {
 
           let proposalOp=op.payload.proposed_ops[0].op;
           proposalOp={
+            account:op.payload.fee_paying_account,
             payload:proposalOp[1],
             type:Operations._operationTypes[proposalOp[0]]
           };
@@ -503,6 +570,14 @@ const Operations = {
              }
           }
           break;
+        case "committee_member_update_global_parameters":
+          return await Operations.getTranslateInfo(
+              "operation_committee_member_update_global_parameters",
+              [
+                {type: "account", value: op.account, arg: "account"},
+              ]
+          );
+           break;
         case "proposal_update":
           return await Operations.getTranslateInfo(
               "operation_proposal_update",
@@ -576,6 +651,7 @@ const Operations = {
                 ]
             )
            break;
+        case "asset_update_bitasset":
         case "asset_update":
           return await Operations.getTranslateInfo(
                 "operation_asset_update",
@@ -647,6 +723,52 @@ const Operations = {
                       ]
                   )
                 break;
+      case "asset_global_settle":
+                return await Operations.getTranslateInfo(
+                            "operation_asset_global_settle",
+                            [
+                                {type: "account", value: op.payload.issuer, arg: "account"},
+                                {type: "price", value: op.payload.settle_price, arg: "price"},
+                                {type: "asset", value: op.payload.asset_to_settle, arg: "asset"}
+                            ]
+                        )
+                      break;
+     case "asset_settle":
+              return await Operations.getTranslateInfo(
+                          "operation_asset_settle",
+                          [
+                            {type: "account", value: op.payload.account, arg: "account"},
+                            {type: "amount", value: op.payload.amount, arg: "amount"}
+                          ]
+                      )
+                    break;
+       case "asset_settle_cancel":
+              return await Operations.getTranslateInfo(
+                          "operation_asset_settle_cancel",
+                          [
+                            {type: "account", value: op.payload.creator, arg: "account"},
+                            {type: "amount", value: op.payload.amount, arg: "amount"}
+                          ]
+                      )
+                    break;
+       case "vesting_balance_create":
+                return await Operations.getTranslateInfo(
+                            "operation_vesting_balance_create",
+                            [
+                                {type: "account", value: op.payload.creator, arg: "account"},
+                                {type: "amount", value: op.payload.amount, arg: "amount"}
+                            ]
+                        )
+                      break;
+        case "asset_update_feed_producers":
+          return await Operations.getTranslateInfo(
+                      "operation_asset_update_feed_producers",
+                      [
+                          {type: "account", value: op.payload.issuer, arg: "account"},
+                          {type: "asset", value: op.payload.asset_to_update, arg: "asset"}
+                      ]
+                  )
+                break;    
        case "asset_claim_fees":
           return await Operations.getTranslateInfo(
                     "operation_asset_claim_fees",
@@ -722,12 +844,29 @@ const Operations = {
                     ]
                 )
             break;
+        case "update_collateral_for_gas":
+          return await Operations.getTranslateInfo(
+                    "operation_update_collateral_for_gas",
+                    [
+                        {type: "account", value: op.payload.mortgager, arg: "mortgager"},
+                        {type: "account", value: op.payload.beneficiary, arg: "beneficiary"},
+                        {
+                            type: "amount",
+                            value:{
+                              amount: op.payload.collateral,
+                              asset_id:"1.3.0"
+                            },
+                            arg: "collateral"
+                        }
+                    ]
+                )
+              break;
     }
   },
   getTranslateInfo:async (localId, keys)=>{
       let lang=_store.rootGetters["setting/defaultSettings"].locale;
       let text = _locales[lang][localId];
-      if(localId=="operation_creat_nh_asset"&&keys.length==2){
+      if(localId=="operation_create_nh_asset"&&keys.length==2){
         text=lang=='en'?'(fee_paying_account) Create NH assets with ownership account (owner)':"(fee_paying_account) 创建NH资产，所有权账户为 (owner)";
       }
       let splitText = utils.get_translation_parts(text);
@@ -739,11 +878,11 @@ const Operations = {
             let value=key.value;
             switch (key.type) {
                 case "account":
-                    let acc_res=await API.Account.getAccount(key.value,true);
-                    if(acc_res.success){
-                      value=acc_res.data.account.name
-                    }else{
-                      value=key.value;
+                    if(/^1.2.\d+/.test(key.value)){
+                      let acc_res=await API.Account.getAccount(key.value,true);
+                      if(acc_res.success){
+                        value=acc_res.data.account.name
+                      }
                     }
                     break;
                 case "asset":
@@ -751,7 +890,7 @@ const Operations = {
                     if(!asset){
                       console.log("链上不存在资产"+asset_id);
                     }
-                    value = asset?asset.symbol:"";
+                    value = asset?asset.symbol:asset;
                     break;
                 case "amount":
                     value =await Operations.FormattedAsset(key.value.amount,key.value.asset_id,key.decimalOffset);
@@ -779,7 +918,7 @@ const Operations = {
                     }   
                     break;
 
-              case "modified":
+                case "modified":
                     let item_data={};
                     value=[value];
                     value.forEach(keyValue=>{
@@ -841,34 +980,12 @@ const Operations = {
   FormattedAsset:async (amount,asset_id,decimalOffset)=>{
      let asset=await API.Assets.fetch([asset_id],true);
      if(!asset){
-      asset={precision:8,symbol:"1.3.0"}; 
+      asset={precision:5,symbol:"1.3.0"}; 
      }
      return helper.getFullNum(amount/Math.pow(10,asset.precision))+" "+asset.symbol;
   },
   // retrieves array of assets ids that were used in operations
-  _getOperationsAssetsIds: (parsedOperations) => {
-    function addNewId(array, id) {
-      if (array.indexOf(id) === -1) array.push(id);
-    }
-
-    return parsedOperations.reduce((result, operation) => {
-      switch (operation.type) {
-        case 'transfer':
-          addNewId(result, operation.payload.amount.asset_id);
-          break;
-        case 'fill_order':
-          addNewId(result, operation.payload.pays.asset_id);
-          addNewId(result, operation.payload.receives.asset_id);
-          break;
-        case 'limit_order_create':
-          addNewId(result, operation.payload.amount_to_sell.asset_id);
-          addNewId(result, operation.payload.min_to_receive.asset_id);
-          break;
-        default:
-      }
-      return result;
-    }, []);
-  },
+ 
 
   // fetches user's operations
   getUserOperations: async ({ userId,startId="1.11.0",endId="1.11.0",limit,store }) => {
@@ -878,7 +995,7 @@ const Operations = {
         [userId, startId, limit, endId]
       );
       if (response && typeof (response) === 'object') {
-        const parsedOperations = await Operations.parseOperations({ operations: response, userId,store });
+        const parsedOperations = await Operations.parseOperations({ operations: response,store });
         return {
           code: 1,
           data: parsedOperations

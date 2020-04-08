@@ -32,9 +32,7 @@ import AccountStore from './store/AccountStore.js';
 
 import * as utils from './utils/index';
 
-var global = module.exports = typeof window != 'undefined' && window.Math == Math
-  ? window : typeof self != 'undefined' && self.Math == Math ? self
-  : Function('return this')();
+
 
   class BCX {
       constructor(params){      
@@ -81,8 +79,8 @@ var global = module.exports = typeof window != 'undefined' && window.Math == Mat
         if(isSwitchNode){
           return this.api.dispatch("setting/setSettingsAPIS",params).then(res=>{
                return this.switchAPINode({
-                   url:this.api.getters["setting/g_settingsAPIs"].select_ws_node,
-                   callback:params.callback
+                  url:params.default_ws_node||this.api.getters["setting/g_settingsAPIs"].select_ws_node,
+                  callback:params.callback
                });
           });  
          }else{
@@ -95,6 +93,7 @@ var global = module.exports = typeof window != 'undefined' && window.Math == Mat
         if(params&&(params.callback||typeof params=="function")){
            this.api.dispatch("connection/initConnection",params);
         }else{
+          this.api.dispatch("setting/setSettingsAPIS",params);
           return new Promise(resolve=>{
              //using params.callback, to compatible with API.
              if(typeof params!="object") params={};
@@ -103,6 +102,10 @@ var global = module.exports = typeof window != 'undefined' && window.Math == Mat
           })
         }
       }
+
+      lookupWSNodeList(params){
+        return this.api.dispatch("connection/lookupWSNodeList",params);
+      }
       //abstractable methods initialization
       apiMethodsInt(){
           const apiMethods={
@@ -110,6 +113,7 @@ var global = module.exports = typeof window != 'undefined' && window.Math == Mat
               queryAccountBalances:"user/getAccountBalances",//query account's specified asset
               queryAccountAllBalances:"user/getUserAllBalance", //query account's owned assets
               queryTransactionBaseFee:"assets/getTransactionBaseFee",//get transaction base fee
+              queryFees:"assets/queryFees",
               createAccountWithPassword:"account/createAccountWithPassword",
               createAccountWithPublicKey:"account/createAccountWithPublicKey",
               passwordLogin:"account/passwordLogin",
@@ -129,8 +133,7 @@ var global = module.exports = typeof window != 'undefined' && window.Math == Mat
               queryBlock:"explorer/queryBlock",
               queryTransaction:"explorer/queryTransaction",
               lookupWitnessesForExplorer:"explorer/getExplorerWitnesses",//query blocks production info
-              claimVestingBalance:"account/claimVestingBalance",
-              lookupWSNodeList:"connection/lookupWSNodeList",//get API server list
+              // lookupWSNodeList:"connection/lookupWSNodeList",//get API server list
               deleteAPINode:"connection/deleteAPINode",//delete an API server address
               addAPINode:"setting/addAPINode",//add an API server address
               queryAssets:"assets/queryAssets",
@@ -138,14 +141,20 @@ var global = module.exports = typeof window != 'undefined' && window.Math == Mat
               unsubscribe:"operations/unsubscribe",
               queryDataByIds:"explorer/getDataByIds",
               queryPriceHistory:"market/queryPriceHistory",
-              queryAssetRestricted:"assets/queryAssetRestricted"
+              queryAssetRestricted:"assets/queryAssetRestricted",
+              queryGas:"assets/estimationGas",
+              formatOperations:"operations/formatOperations"//
           }
           const use_accountOpt_methods={
             getPrivateKey:"account/_getPrivateKey", 
             changePassword:"account/changePassword",
             upgradeAccount:"account/upgradeAccount",
-            lookupBlockRewards:"account/getVestingBalances",
 
+            witnessCreate:"vote/witnessCreate",
+            committeeMemberCreate:"vote/committeeMemberCreate",
+            witnessUpdate:"vote/witnessUpdate",
+            committeeMemberUpdate:"vote/committeeMemberUpdate",
+            
             registerCreator:"NHAssets/registerCreator",
             creatWorldView:"NHAssets/creatWorldView",
             creatNHAsset:"NHAssets/creatNHAsset",
@@ -169,14 +178,19 @@ var global = module.exports = typeof window != 'undefined' && window.Math == Mat
 
             createLimitOrder:"market/createLimitOrder",
             cancelLimitOrder:"market/cancelLimitOrder",
+            callOrderUpdate:"market/callOrderUpdate",
 
             createContract:"contract/createContract",
             updateContract:"contract/updateContract",
             callContractFunction:"contract/callContractFunction",
 
             transferAsset:"transactions/transferAsset",
+            transferAssets:"transactions/transferAssets",
+            
             setCurrentAccount:"AccountStore/setCurrentAccount",
             proposeRelateWorldView:"NHAssets/proposeRelateWorldView",
+            updateCollateralForGas:"assets/updateCollateralForGas",
+            claimVestingBalance:"account/claimVestingBalance"
           }
           
           const use_validateAccount_methods={
@@ -187,6 +201,8 @@ var global = module.exports = typeof window != 'undefined' && window.Math == Mat
             queryAccountNHAssetOrders:"NHAssets/queryAccountNHAssetOrders",
             queryNHAssetsByCreator:"NHAssets/queryNHAssetsByCreator",
             getAccountProposals:"proposals/loadAccountProposals",
+            queryDebt:"market/queryDebt",
+            queryVestingBalance:"account/queryVestingBalance"
           }
 
           for(let key in apiMethods){
@@ -334,7 +350,7 @@ var global = module.exports = typeof window != 'undefined' && window.Math == Mat
           return {code:114,message:"Account is locked or not logged in"};
         }
         if(memo){
-          return {code:1,data:this.api.getters["PrivateKeyStore/decodeMemo"](memo,this.api)};
+          return this.api.getters["PrivateKeyStore/decodeMemo"](memo,this.api);
         }else{
           return {code:129,message:"Parameter 'memo' can not be empty"};
         }
@@ -419,18 +435,24 @@ var global = module.exports = typeof window != 'undefined' && window.Math == Mat
         let initPromise=new Promise((resolve)=>{
             this.init(init_res=>{
               if(init_res.code==1){
-                params.new_proxy_id=params.proxyAccount||"";
-                params.witnesses_ids=params.witnessesIds;
-
-                let {witnesses_ids,committee_ids,new_proxy_id,onlyGetFee}=params;
+                let {vote_ids,votes,type}=params;
+                if(!vote_ids||votes==undefined||type==undefined){
+                  resolve({code:101,message:"Parameter is missing"});
+                  return;
+                }
+                if(!Array.isArray(vote_ids)||isNaN(Number(votes))||!(/witnesses|committee/.test(type))){
+                  resolve({code:1011,message:"Parameter error"});
+                  return;
+                }
+                if(votes==0){
+                  vote_ids.length=0;
+                }
                 this.api.dispatch("account/accountOpt",{
                   method:"vote/publishVotes",
                   params:{
-                    witnesses_ids,
-                    committee_ids,
-                    new_proxy_id,
-                    onlyGetFee,
-                    // feeAssetId,
+                    vote_ids,
+                    votes,
+                    type,
                     callback:res=>{ resolve(res) }
                   }
                 })
@@ -445,25 +467,46 @@ var global = module.exports = typeof window != 'undefined' && window.Math == Mat
 
     switchAPINode(params){
       //donot send to promiseCompatible Interface, and donot check RPC connection
+      // let initPromise=new Promise((resolve)=>{
+      //     this.init(init_res=>{
+      //       if(init_res.code==1){
+      //         this.api.dispatch("connection/switchNode",{
+      //            url:params.url,
+      //            callback:res=>{ resolve(res); }
+      //         });
+      //       }else{
+      //         resolve(init_res);
+      //       }
+      //    })
+      // });
+      // if(!params.callback) return initPromise;
+      // initPromise.then(res=>{ params.callback(res);})
+      
+
       let initPromise=new Promise((resolve)=>{
-          this.init(init_res=>{
-            if(init_res.code==1){
-              this.api.dispatch("connection/switchNode",{
-                 url:params.url,
-                 callback:res=>{ resolve(res); }
-              });
-            }else{
-              resolve(init_res);
+          this.api.dispatch("connection/switchNode",{
+            url:params.url,
+            callback:res=>{ 
+               resolve(res);
             }
-         })
+          });
       });
       if(!params.callback) return initPromise;
       initPromise.then(res=>{ params.callback(res);})
+
+      // return this.api.dispatch("connection/switchNode",{
+      //   url:params.url
+      // });
     }
     /**********Interfaces cannot return value, callbacks only **end** United Labs of BCTech.*/
+
+    testNodesPings(nodes){
+      return utils.testNodesPings(nodes);
+    }
   }
 
   // export default BCX;
-  global.BCX=BCX;
-
+  export function createBCX(params){
+	       return new BCX(params);
+	}
  

@@ -1,7 +1,6 @@
 import { key } from 'bcxjs-cores';
 import { Apis } from 'bcxjs-ws';
-import  fetch  from 'node-fetch';
-// var fetch = require('node-fetch');
+import  fetch  from 'node-fetch';	
 export const suggestBrainkey = (dictionary) => {
   return key.suggest_brain_key(dictionary);
 };
@@ -17,13 +16,15 @@ export const getAccount = async (id,isCache=false) => {
         if(_accs[id]){
           return {code:1,data:_accs[id],success:true}
         }
-        // else{
-        //   return {code:0,success:false};
-        // }
+    }else{
+      _accs[id]={account:{name:id}};
     }
   }
-  _accs[id]="";
+  // _accs[id]="";
   try {
+    if(!(/^1.2.\d+/.test(id))){
+      return {code:0}
+    }
     const response = await Apis.instance().db_api().exec('get_objects', [[id]]);
     if (response && response[0]) {
       const user ={
@@ -145,8 +146,10 @@ export const createAccount = async ({ name, ownerPubkey, activePubkey, referrer 
         let {code,data,msg}=result;
         let res={
             success:code==200,
+            code,
             data,
-            msg
+            msg,
+            message:msg
         }
         if(code!=200){
           res.error=msg;
