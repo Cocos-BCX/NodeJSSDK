@@ -1,5 +1,4 @@
-import { PrivateKey, key, Aes, brainKey,ChainValidation,FetchChain } from 'bcxjs-cores';
-import {ChainStore,FetchChainObjects} from "bcxjs-cores";
+import { PrivateKey, key, Aes, brainKey,ChainValidation,FetchChain,ChainStore,FetchChainObjects } from 'bcxjs-cores';
 import Immutable from "immutable";
 
 import * as types from '../mutations';
@@ -22,9 +21,7 @@ const createWallet = ({ password,wif }) => {
 
   const private_key = PrivateKey.fromWif(wif) //could throw and error
   const private_plainhex = private_key.toBuffer().toString('hex')
-  // const brainkey = API.Account.suggestBrainkey(_dictionary.en);
-  // const normalizedBrainkey = key.normalize_brainKey(brainkey);
-  // const encryptedBrainkey = aesPrivate.encryptToHex(normalizedBrainkey);
+
   const encrypted_key = aesPrivate.encryptHex(private_plainhex);
 
 
@@ -71,8 +68,8 @@ export const createAccountWithPassword = async (store, params) => {
   }
   let { account, password, autoLogin=false,onlyGetFee=false}=params;
  
-  if(!(/^[a-z]([a-z0-9\.-]){4,63}$/.test(account))){
-    return {code:103,message:"Please enter the correct account name(/^[a-z]([a-z0-9\.-]){4,63}$/)"};
+  if(!(/^[a-z]([a-z0-9\.-]){4,62}$/.test(account))){
+    return {code:103,message:"Please enter the correct account name(/^[a-z]([a-z0-9\.-]){4,62}$/)"};
   }
   
   const { commit,dispatch,rootGetters,getters } = store;
@@ -133,7 +130,7 @@ export const createAccountWithPassword = async (store, params) => {
   }
 
   commit(types.ACCOUNT_SIGNUP_ERROR, { error: result.error });
-  return {code:0,message:result.error,error:result.error};
+  return {code:result.code,message:result.error,error:result.error};
 };
 
 
@@ -143,8 +140,8 @@ export const createAccountWithPublicKey = async (store, params) => {
   }
   let { account, ownerPubkey, activePubkey}=params;
  
-  if(!(/^[a-z]([a-z0-9\.-]){4,63}$/.test(account))){
-    return {code:103,message:"Please enter the correct account name(/^[a-z]([a-z0-9\.-]){4,63}$/)"};
+  if(!(/^[a-z]([a-z0-9\.-]){4,62}$/.test(account))){
+    return {code:103,message:"Please enter the correct account name(/^[a-z]([a-z0-9\.-]){4,62}$/)"};
   }
   
   const { commit,dispatch,rootGetters,getters } = store;
@@ -192,7 +189,7 @@ export const createAccountWithPublicKey = async (store, params) => {
   }
 
   commit(types.ACCOUNT_SIGNUP_ERROR, { error: result.error });
-  return {code:0,message:result.error,error:result.error};
+  return {code:result.code,message:result.error,error:result.error};
 };
 
 export const createAccountWithWallet=async({dispatch,rootGetters},params)=>{
@@ -202,8 +199,8 @@ export const createAccountWithWallet=async({dispatch,rootGetters},params)=>{
   let {callback,account,password,onlyGetFee=false}=params;
   dispatch("transactions/setOnlyGetOPFee",onlyGetFee,{root:true});
 
-  if(!(/^[a-z]([a-z0-9\.-]){4,63}/.test(account))){
-    return {code:103,message:"Please enter the correct account name(/^[a-z]([a-z0-9\.-]){4,63}/)"}
+  if(!(/^[a-z]([a-z0-9\.-]){4,62}/.test(account))){
+    return {code:103,message:"Please enter the correct account name(/^[a-z]([a-z0-9\.-]){4,62}/)"}
   }
 
    if(!rootGetters["WalletDb/wallet"])
@@ -263,8 +260,8 @@ export const application_api_create_account=({dispatch},{ owner_pubkey,
                         asset_id: 0
                     },
                     "registrar": chain_registrar.get("id"),
-                    "referrer": chain_referrer.get("id"),
-                    "referrer_percent": referrer_percent,
+                    // "referrer": chain_referrer.get("id"),
+                    // "referrer_percent": referrer_percent,
                     "name": new_account_name,
                     "owner": {
                         "weight_threshold": 1,
@@ -280,9 +277,9 @@ export const application_api_create_account=({dispatch},{ owner_pubkey,
                     },
                     "options": {
                         "memo_key": active_pubkey,
-                        "voting_account": "1.2.5",
-                        "num_witness": 0,
-                        "num_committee": 0,
+                        // "voting_account": "1.2.5",
+                        // "num_witness": 0,
+                        // "num_committee": 0,
                         "votes": [ ]
                     }
                 }
@@ -689,13 +686,6 @@ export const _getPrivateKey=async ({dispatch},{account})=>{
         return true;
     }))
     
-
-    // let activePrivateKey = (activePublicKey !== '') ?await dispatch("WalletDb/getPrivateKey",activePublicKey,{root:true}): '';
-    // let ownerPrivateKey = (ownerPublicKey !== '') ?await dispatch("WalletDb/getPrivateKey",ownerPublicKey,{root:true}): '';
-
-    // console.info("activePrivateKey",activePrivateKey,activePublicKey,account);
-    // activePrivateKey=activePrivateKey?activePrivateKey.toWif():"";
-    // ownerPrivateKey=ownerPrivateKey?ownerPrivateKey.toWif():"";
     if(activePrivateKeys.length||ownerPrivateKeys.length){
       return  {
         code:1,
@@ -765,7 +755,7 @@ export const _validateAccount=async ({dispatch},{method,params,account,accountFi
     if(accountFieldName=="to_account_id")
        return {code:133,message:"Parameter 'toAccount' can not be empty"};
 
-    //return {code:101,message:"Parameter is missing"}
+    return {code:101,message:"Parameter is missing"}
   }else{
     let acc_res=await dispatch("user/getUserInfo",{account,isCache:true},{root:true});
     if(acc_res.code!=1) return acc_res;
@@ -795,65 +785,99 @@ export const setAccountUserId=({commit},userId)=>{
   commit(types.ACCOUNT_LOGIN_COMPLETE, {userId});
 }
 
-export const getVestingBalances=async ({dispatch,rootGetters},{account,type=1})=>{
-  let vbs = await API.Account.getVestingBalances(account.id);
+export const queryVestingBalance=async ({dispatch,rootGetters},{account_id,type,vid,isLimit=false})=>{
+  let vbs = await API.Account.getVestingBalances(account_id);
   let cvbAsset,
       vestingPeriod,
       earned,
+      old_earned,
+      new_earned,
+      total_earned,
+      past_sconds,
+      coin_seconds_earned_last_update,
       secondsPerDay = 60 * 60 * 24,
       availablePercent;
   let new_vbs=[];
-  for(let i=0;i<vbs.length;i++){
-    let {id,balance,policy}=vbs[i];
-    cvbAsset=await dispatch("assets/fetchAssets",{assets:[balance.asset_id],isOne:true},{root:true})
-    earned=policy[1].coin_seconds_earned;
 
-      vestingPeriod = policy[1].vesting_seconds;
-      if(type==1&&vestingPeriod!=86400){
-        continue;
-      }
+  for(let i=0;i<vbs.length;i++){
+    let {id,balance,policy,describe}=vbs[i];
+    cvbAsset=await dispatch("assets/fetchAssets",{assets:[balance.asset_id],isOne:true},{root:true});
+    coin_seconds_earned_last_update=policy[1].coin_seconds_earned_last_update;
+    vestingPeriod = policy[1].vesting_seconds;
+    past_sconds=Math.floor((new Date()-new Date(coin_seconds_earned_last_update+"Z"))/1000);
+    if(past_sconds>vestingPeriod) past_sconds=vestingPeriod;
+   
+    if(/^1\.6\.\d+/.test(describe)){
+      describe="cashback_block"
+    }
+    if(vid&&vid!=id){
+      continue
+    }
+    if(type&&type!=describe){
+        continue
+    }
+
+    total_earned=vestingPeriod*balance.amount;
+    new_earned=(past_sconds / vestingPeriod)*(total_earned);
+    old_earned=Number(policy[1].coin_seconds_earned);
+
+    earned=old_earned+new_earned;
+    if(earned>=total_earned) earned=total_earned;
+
+    availablePercent = (vestingPeriod === 0) ? 1 : earned / (vestingPeriod * balance.amount);
+
+    let remaining_hours=utils.format_number(
+          vestingPeriod *
+              (1 - availablePercent) /
+              3600 || 0,
+          2
+      )
 
       let require_coindays=utils.format_number(utils.get_asset_amount(
-                    balance.amount *
-                        vestingPeriod /
-                        secondsPerDay,
-                    cvbAsset
-                ),0)
-               
-      availablePercent = vestingPeriod === 0 ? 1 : earned / (vestingPeriod * balance.amount);
-
-      let remaining_days=utils.format_number(
-            vestingPeriod *
-                (1 - availablePercent) /
-                secondsPerDay || 0,
-            2
-        )
-        // remaining_days=Number(remaining_days.replace(/,/g,""));
-      // let available_get=utils.format_number(availablePercent * 100, 2)+" % / "
-      //                   + (availablePercent * balance.amount/Math.pow(10,cvbAsset.precision))+" "+cvbAsset.symbol;
-        earned=utils.format_number(utils.get_asset_amount(
-                          earned / secondsPerDay,
-                          cvbAsset
-                      ),0);   
-      let precision_value=Math.pow(10,cvbAsset.precision)                
+        balance.amount *
+            vestingPeriod /
+            secondsPerDay,
+        cvbAsset
+      ),0)
+      earned=utils.format_number(utils.get_asset_amount(
+                      earned / secondsPerDay,
+                      cvbAsset
+                  ),0);   
+  
+      let precision_value=Math.pow(10,cvbAsset.precision);
+      let available_balance_amount= utils.format_number((availablePercent*balance.amount)/precision_value,cvbAsset.precision);    
+      if(describe=="cashback_block"){
+        available_balance_amount=Math.floor(available_balance_amount);
+      }else{
+        available_balance_amount=(Math.floor(available_balance_amount*1000))/1000;
+      }           
+     
+      if(isLimit){
+        let min_interval=10;
+        // if(describe=="cashback_block") min_interval=5;
+        if(Number(old_earned)>0&&past_sconds<min_interval&&describe!="cashback_block"){
+          return {code:181,message:`Please try again in ${min_interval-past_sconds} seconds`};
+        }
+        // if(available_balance_amount<0.01){
+        //   return {code:182,message:`draw quantity is less than 0.01`};
+        // }
+      }
+      
       new_vbs.push({
         id,
+        type:describe,
         return_cash:balance.amount/precision_value,
-        earned_coindays:earned,
-        require_coindays,
-        remaining_days,
+        remaining_hours,
         available_percent:utils.format_number(availablePercent * 100,2),
         available_balance:{
-          amount: utils.format_number(availablePercent * balance.amount/precision_value,8),
+          amount: available_balance_amount,
           asset_id:cvbAsset.id,
           symbol:cvbAsset.symbol,
           precision:cvbAsset.precision
         }
       })
   }
-  if(type!=2){
-    new_vbs=new_vbs.length?new_vbs[0]:null;
-  }
+
   let res={code:1,data:new_vbs}
   if(!new_vbs){
     res={code:127,message:"No reward available"}
@@ -861,26 +885,33 @@ export const getVestingBalances=async ({dispatch,rootGetters},{account,type=1})=
   return res;
 }
 
-export const claimVestingBalance=async ({dispatch},{id})=>{
-   if(!id){
-    return {code:101,message:"Parameter is missing"};
+export const claimVestingBalance=async ({dispatch},{id,account,amount})=>{
+   if(!id||!amount){
+     return {code:101,message:"Parameter is missing"};
    }
    id=id.trim();
-
-   let res=await dispatch("_accountOpt",{
-              method:"account/getVestingBalances",
-              params:{ type:2 }
+   if(isNaN(Number(amount))){
+    return {code:135,message:"Please check parameter data type"};
+   }
+   let res=await dispatch("_validateAccount",{
+              method:"account/queryVestingBalance",
+              params:{ type:'',vid:id,isLimit:true },
+              account:account.id
             })
 
     if(res.code!=1) return res;
-           
     let rewards=res.data.filter(item=>item.id==id);
     if(rewards.length){
-      let {amount,precision,asset_id}=rewards[0].available_balance;
+      let {precision,asset_id}=rewards[0].available_balance;
+      let max_amount=rewards[0].available_balance.amount;
+      if(amount>max_amount){
+        return {code:183,message:`Up to ${max_amount}`}
+      }
       amount=Math.floor(amount*Math.pow(10,precision));
+      
       return  dispatch('transactions/_transactionOperations', {
             operations:[{
-                op_type:31,
+                op_type:27,
                 type:"vesting_balance_withdraw",
                 params:{
                   vesting_balance:id,

@@ -20,9 +20,7 @@ const initialState = {
   cache_assets:{},
   pending: false,
   assetsFetched:0,
-  totalAssets:process.browser?(accountStorage&&typeof accountStorage.get("totalAssets") != "object"
-      ? accountStorage.get("totalAssets")
-      : 3000):300
+  totalAssets:300
 };
 
 const mutations = {

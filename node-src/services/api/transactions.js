@@ -22,6 +22,7 @@ const signTransaction = async (transaction,store) => {
   //Contract authentication
   try{
     let app_keys=store.rootGetters["PrivateKeyStore/app_keys"];
+    if(app_keys.length&&transaction.operations[0][0]==35)
     app_keys.forEach(app_key=>{
       app_key= PrivateKey.fromWif(app_key);
       transaction.add_signer(app_key, app_key.toPublicKey().toPublicKeyString())
@@ -30,33 +31,24 @@ const signTransaction = async (transaction,store) => {
 };
 
 
-const buildOperationsAndBroadcast = async (transaction,store) => {
+const buildOperationsAndBroadcast = async (transaction,store,opObjects) => {
   await signTransaction(transaction,store);
   await transaction.update_head_block();
-  await transaction.set_required_fees();
-  if(store.rootGetters["transactions/onlyGetOPFee"]){
-    let feeObj=transaction.operations[0][1].fee;
-    let feeAsset=await store.dispatch("assets/fetchAssets",{assets:[feeObj.asset_id],isOne:true},{root:true});
-    return {
-      fee_amount:helper.getFullNum(feeObj.amount/Math.pow(10,feeAsset.precision)),
-      fee_symbol:feeAsset.symbol
-    }
-  }
-      
+ 
   const res=await transaction.broadcast();
   return res;
 };
 
 
 
-const process_transaction=(transaction,store)=>{
+const process_transaction=(transaction,store,opObjects)=>{
   return new Promise(async (resolve) => {
       const broadcastTimeout = setTimeout(() => {
         resolve({ success: false, error: {message:'Expiry of the transaction'},code:119});
       }, ChainConfig.expire_in_secs * 2000);
 
       try {
-        let transactionResData=await buildOperationsAndBroadcast(transaction,store);
+        let transactionResData=await buildOperationsAndBroadcast(transaction,store,opObjects);
         clearTimeout(broadcastTimeout);
         resolve({ success: true,data:transactionResData,code:1});
 
@@ -83,70 +75,68 @@ const process_transaction=(transaction,store)=>{
 }
 
 const transactionOpWorker = async (fromId,operations,fromAccount,propose_options,store) => {
-  if(process.browser){
-      // const opObjects=await buildOPObjects(operations,fromId,fromAccount,store);
-      // if(opObjects.success==false){
-      //   return opObjects;
-      // }
-      // let keys=store.rootGetters["PrivateKeyStore/keys"];
-      // let aes_private=store.rootGetters["WalletDb/aes_private"];
-      // let _passwordKey=store.rootGetters["WalletDb/_passwordKey"]
-      // let app_keys=store.rootGetters["PrivateKeyStore/app_keys"];
+  // if(process.browser){
+  //     const opObjects=await buildOPObjects(operations,fromId,fromAccount,store);
+  //     if(opObjects.success==false){
+  //       return opObjects;
+  //     }
+  //     let keys=store.rootGetters["PrivateKeyStore/keys"];
+  //     let aes_private=store.rootGetters["WalletDb/aes_private"];
+  //     let _passwordKey=store.rootGetters["WalletDb/_passwordKey"]
+  //     let app_keys=store.rootGetters["PrivateKeyStore/app_keys"];
 
-      // let core_asset=await API.Assets.fetch(["1.3.0"],true);;
+  //     let core_asset=await API.Assets.fetch(["1.3.0"],true);;
       
-      // let $passwordKey={};
-      // if(_passwordKey){
-      //   Object.keys(_passwordKey).forEach(pubkeyStr=>{
-      //     $passwordKey[pubkeyStr]= _passwordKey[pubkeyStr].toWif();
-      //   })
-      // }else {
-      //   var getPrivateKeyPromises=[];
-      //   Object.keys(keys).forEach(pubkeyStr=>{
-      //     getPrivateKeyPromises.push(store.dispatch("WalletDb/getPrivateKey",pubkeyStr,{root:true}));
-      //   })
+  //     let $passwordKey={};
+  //     if(_passwordKey){
+  //       Object.keys(_passwordKey).forEach(pubkeyStr=>{
+  //         $passwordKey[pubkeyStr]= _passwordKey[pubkeyStr].toWif();
+  //       })
+  //     }else {
+  //       var getPrivateKeyPromises=[];
+  //       Object.keys(keys).forEach(pubkeyStr=>{
+  //         getPrivateKeyPromises.push(store.dispatch("WalletDb/getPrivateKey",pubkeyStr,{root:true}));
+  //       })
 
-      //   let privateKeys=await Promise.all(getPrivateKeyPromises);
-      //   privateKeys.forEach(key=>{
-      //     $passwordKey[key.toPublicKey().toString()]=key.toWif();
-      //   })
-      // }
+  //       let privateKeys=await Promise.all(getPrivateKeyPromises);
+  //       privateKeys.forEach(key=>{
+  //         $passwordKey[key.toPublicKey().toString()]=key.toWif();
+  //       })
+  //     }
  
-      // return  new Promise((resolve)=>{
-      //   var transactionWorker = require("bcl-worker-loader?name=bcxWorker.js!../workers/transactionWorker.js")
-      //   var worker = new transactionWorker;
-      //   // console.info("opObjects",opObjects);
-      //   worker.postMessage({
-      //     opObjects,
-      //     propose_options,
-      //     core_asset,
-      //     onlyGetOPFee:store.rootGetters["transactions/onlyGetOPFee"],
-      //     url:store.rootGetters["setting/SELECT_WS_NODE_URL"],
-      //     keys,
-      //     aes_private,
-      //     _passwordKey:$passwordKey,
-      //     app_keys,
-      //     networks:store.rootGetters["setting/networks"],
-      //     fromId
-      //   });
-      //   worker.onmessage = event => {
-      //     var res = event.data;
-      //     resolve(res);
-      //   }
-      // })
-    }
+  //     return  new Promise((resolve)=>{
+  //       var transactionWorker = require("bcl-worker-loader?name=bcxWorker.js!../workers/transactionWorker.js")
+  //       var worker = new transactionWorker;
+  //       // console.info("opObjects",opObjects);
+  //       worker.postMessage({
+  //         opObjects,
+  //         propose_options,
+  //         core_asset,
+  //         onlyGetOPFee:store.rootGetters["transactions/onlyGetOPFee"],
+  //         url:store.rootGetters["setting/SELECT_WS_NODE_URL"],
+  //         keys,
+  //         aes_private,
+  //         _passwordKey:$passwordKey,
+  //         app_keys,
+  //         networks:store.rootGetters["setting/networks"],
+  //         fromId
+  //       });
+  //       worker.onmessage = event => {
+  //         var res = event.data;
+  //         resolve(res);
+  //       }
+  //     })
+  //   }
 };
 
 const transactionOp = async (fromId,operations,fromAccount,proposeAccountId="",store) => {
   const opObjects=await buildOPObjects(operations,proposeAccountId||fromId,fromAccount,store);
-  // console.info("opObjects",opObjects);
   if(opObjects.code&&opObjects.code!=1){
     return opObjects;
   }
   
-  // if(store.rootGetters["PrivateKeyStore/app_keys"])
   const transaction = new TransactionBuilder();
-
+  // console.info("opObjects",opObjects);
   opObjects.forEach(op=>{
     transaction.add_type_operation(op.type, op.opObject); 
   });
@@ -184,22 +174,22 @@ const transactionOp = async (fromId,operations,fromAccount,proposeAccountId="",s
   // }
 
   if(proposeAccountId){
-     await transaction.set_required_fees();
      await  transaction.update_head_block();
      let propose_options={
       fee_paying_account:fromId
      }  
      transaction.propose(propose_options)
   }
-
-  return  process_transaction(transaction,store);
+  // console.info("transaction",transaction);
+  return  process_transaction(transaction,store,opObjects);
 };
 
 const buildOPObjects=async (operations,fromId,fromAccount,store)=>{
   let opObjects=[];
   let opObject,opItem;
   for(let i=0;i<operations.length;i++){
-        opItem=operations[i];
+      opObject=null;
+      opItem=operations[i];
       try{
         let opParams=opItem.params;
         let {asset_id="1.3.0",fee_asset_id="1.3.0"}=opParams;
@@ -243,7 +233,7 @@ const buildOPObjects=async (operations,fromId,fromAccount,store)=>{
               extensions:[]
             };   
             break; 
-          case "creat_nh_asset_order":
+          case "create_nh_asset_order":
             let {pending_orders_fee,price,priceAssetId="1.3.0"}=opParams;
 
             pending_orders_fee=await helper.toOpAmount(pending_orders_fee,assetObj);
@@ -278,21 +268,22 @@ const buildOPObjects=async (operations,fromId,fromAccount,store)=>{
         }
 
         let {op_type}=opItem;
+
         if(typeof op_type!="undefined"){
-          if((op_type>=46&&op_type<=54)&&op_type!=52){
+          if((op_type>=37&&op_type<=45)&&op_type!=43){
               if("asset_id" in opParams)  opParams.asset_id=assetObj.symbol;
               
               opObject=opParams;
               switch (op_type){
-                case 51:opObject.from=fromId;
+                case 42:opObject.from=fromId;
                       break;
-                case 48:opObject.related_account=fromId;
+                case 39:opObject.related_account=fromId;
                       break;
-                  default: opObject.fee_paying_account=fromId;
+                  default:opObject.fee_paying_account=fromId;
               }
 
           }else if(op_type==0||op_type==13){
-              let {to,amount=0,memo}=opParams;
+              let {to,amount=0,memo,isEncryption}=opParams;
 
               let toAccount =await getUser(to);
               if (!toAccount.success)  return { success: false, error: 'Account receivable does not exist',code:116 };
@@ -312,10 +303,14 @@ const buildOPObjects=async (operations,fromId,fromAccount,store)=>{
                 opObject.asset_to_issue=amount;
               }
               if (memo) {
-                let memo_key=toAccount.data.account.options.memo_key;
-                let memo_from_privkey =await store.dispatch("WalletDb/getPrivateKey",fromAccount.account.options.memo_key,{root:true})
+                if(isEncryption){
+                  let memo_key=toAccount.data.account.options.memo_key;
+                  let memo_from_privkey =await store.dispatch("WalletDb/getPrivateKey",fromAccount.account.options.memo_key,{root:true})
+                  memo=encryptMemo(new Buffer(memo, "utf-8"), memo_from_privkey, memo_key);
+                }
+                
                 try {
-                  opObject.memo = encryptMemo(new Buffer(memo, "utf-8"), memo_from_privkey, memo_key);
+                  opObject.memo =[isEncryption?1:0,memo];//
                 } catch (error) {
                   return { success: false, error: 'Encrypt memo failed',code:118 };
                 }
@@ -325,27 +320,12 @@ const buildOPObjects=async (operations,fromId,fromAccount,store)=>{
           } 
         }
 
-        opObject.fee = {
-          amount:0,
-          asset_id:"1.3.0"
-        };
-        if("transfer,account_upgrade,call_order_update,limit_order_cancel".indexOf(opItem.type)!=-1){
-          let feeAssetObj=await API.Assets.fetch_asset_one(fee_asset_id);
-          if(feeAssetObj.code!=1){
-            return feeAssetObj;
-          }
-          opObject.fee.asset_id=await accountUtils.getFinalFeeAsset(
-            Immutable.fromJS(fromAccount),
-            opItem.type,
-            feeAssetObj.data.id
-          );
-        }
-       
         opObjects.push({
             type:opItem.type,
             opObject
         });
       }catch(e){
+        console.info("e",e);
         return {
           success:false,
           error:e.message,

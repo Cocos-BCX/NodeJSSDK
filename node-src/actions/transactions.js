@@ -5,8 +5,9 @@ import helper from '../lib/common/helper';
 export const transferAsset = async ({ dispatch,rootGetters },params) => {
   helper.trimParams(params)
 
-  let {fromAccount="",toAccount,amount=0,memo,assetId="1.3.0",
-  onlyGetFee=false,feeAssetId="1.3.0",proposeAccount="",isPropose}=params;
+  let {fromAccount="",toAccount,amount=0,memo,assetId="1.3.0",isEncryption=true,
+  onlyGetFee=false,proposeAccount="",isPropose}=params;
+  
   if(!toAccount){
     return {code:124,message:"Receivables account name can not be empty"}
   }
@@ -27,11 +28,43 @@ export const transferAsset = async ({ dispatch,rootGetters },params) => {
         amount,
         asset_id:assetId,
         memo,
-        fee_asset_id:feeAssetId
+        isEncryption
       }
     }],
     proposeAccount,
     onlyGetFee
+  });
+};
+
+
+export const transferAssets = async ({ dispatch,rootGetters },params) => {
+  helper.trimParams(params)
+  let {ops,onlyGetFee=false,proposeAccount="",isPropose,onlyGetBroadcastDataPacket}=params;
+  let operations=[];
+  for(let i=0;i<ops.length;i++){
+    let {fromAccount="",toAccount,amount=0,memo,assetId="1.3.0",feeAssetId="1.3.0",isEncryption=false}=ops[i];
+    if(!toAccount){
+      return {code:124,message:"Receivables account name can not be empty"}
+    }
+    assetId=assetId||"1.3.0";
+    assetId=assetId.toUpperCase();
+    operations.push({
+      op_type:0,
+      type:"transfer",
+      params:{
+        to:toAccount,
+        amount,
+        asset_id:assetId,
+        memo,
+        isEncryption
+      }
+    })
+  }
+  return dispatch('_transactionOperations', {
+    operations,
+    proposeAccount,
+    onlyGetFee,
+    onlyGetBroadcastDataPacket
   });
 };
 
@@ -66,7 +99,7 @@ export const _transactionOperations = async (store, { operations,proposeAccount=
   const res=await API.Transactions[worker?"transactionOpWorker":"transactionOp"](fromId,operations,fromAccount,proposeAccount,store);
   if (res.success) {
 
-    if(onlyGetFee) return {code:1,data:res.data}
+    // if(onlyGetFee) return {code:1,data:res.data}
     
      let {id,block_num,trx}=res.data[0];
      let results=[];
@@ -87,7 +120,6 @@ export const _transactionOperations = async (store, { operations,proposeAccount=
               });
               op_result.contract_affecteds=(await API.Operations.parseOperations({
                 operations:_operations,
-                userId:rootGetters["account/getAccountUserId"],
                 store,
                 isContract:true
               })).map(item=>{

@@ -1,9 +1,8 @@
 import PersistentStorage from '../persistent-storage';
 let WebSocketClient = void 0;
-if (typeof WebSocket === "undefined" && !process.env.browser) {
-    WebSocketClient = require("ws");
-} else {
-    WebSocketClient = WebSocket;
+		if (typeof WebSocket === "undefined" && !process.env.browser) {
+	    WebSocketClient = require("ws");
+	} else {		    WebSocketClient = WebSocket;
 }
 class NodesManager {
   constructor({ nodes, defaultNode }) {
